@@ -229,15 +229,26 @@ git commit -m "feat(skill-opt): reference-based skill_eval judge vs gold summary
 - [ ] **Step 1: Add the experiment-runner helper cell**
 
 ```python
+def _delete_experiment_if_exists(version_name: str):
+    """Idempotency: drop any prior experiment with this name so the notebook is re-runnable
+    (Arize rejects experiments.run when the name already exists on the dataset)."""
+    existing = client.experiments.list(space=SPACE_ID, dataset=DATASET_NAME)
+    for e in existing.experiments:
+        if e.name == version_name:
+            client.experiments.delete(experiment=e.id, space=SPACE_ID, dataset=DATASET_NAME)
+
 def run_experiment(version_name: str):
-    experiment, _ = client.experiments.run(
+    _delete_experiment_if_exists(version_name)
+    # experiments.run returns (experiment, results_df); we use the returned df directly.
+    # NOTE: client.experiments.list_runs(...).to_df() is buggy in arize SDK v8.37.1
+    # (raises pydantic ValidationError: ExperimentRun.id is None), so we avoid it.
+    experiment, eval_df = client.experiments.run(
         name=version_name,
         dataset=DATASET_NAME,
         space=SPACE_ID,
         task=run_skill,
         evaluators=[skill_eval],
     )
-    eval_df = client.experiments.list_runs(experiment=experiment.id, all=True).to_df()
     return experiment, eval_df
 
 def mean_score(eval_df) -> float:
@@ -249,7 +260,12 @@ def collect_feedback(eval_df, n_bad: int = 3, n_good: int = 5):
     return pd.concat([bad, good])
 ```
 
-Note: the eval column prefix is derived from the evaluator function name `skill_eval` → `eval.skill_eval.*`, mirroring `02_prompt_optimization.ipynb` where `summary_eval` produced `eval.summary_eval.*`. Confirm the exact column names in Step 2 and adjust if the SDK differs.
+Note: the DataFrame returned by `client.experiments.run(...)` carries the columns
+`output`, `eval.skill_eval.score`, `eval.skill_eval.label`, `eval.skill_eval.explanation`
+(prefix derived from the evaluator name `skill_eval`). This was confirmed live via a
+`dry_run`. We use this returned df because `list_runs().to_df()` is broken in arize SDK
+v8.37.1. The `_delete_experiment_if_exists` guard is required because `experiments.run`
+raises `Flight ... already exists` when the experiment name is reused (every re-run).
 
 - [ ] **Step 2: Add the baseline run cell**
 
