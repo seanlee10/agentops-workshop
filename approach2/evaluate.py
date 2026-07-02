@@ -76,18 +76,32 @@ def _delete_experiment_if_exists(version_name: str):
             return
         time.sleep(2)
 
-def run_agent_experiment(version_name: str, _retries: int = 3):
-    _delete_experiment_if_exists(version_name)
+def run_agent_experiment(version_name: str, _retries: int = 3, _suffix: int = 0):
+    # A name can be permanently blocked server-side even when experiments.list() no
+    # longer shows it -- observed in practice: "already exists" persisted across 10
+    # real creation attempts for a name whose earlier run was killed mid-execution,
+    # despite list() confirming it absent (a ghost/orphaned record). The _retries
+    # loop below handles genuine eventual-consistency races; once that budget is
+    # exhausted, fall back to a suffixed name so a single poisoned name can't stall
+    # an unattended run.
+    name = version_name if _suffix == 0 else f"{version_name}-r{_suffix}"
+    _delete_experiment_if_exists(name)
     # use run()'s returned df; list_runs().to_df() is broken in arize SDK v8.37.1
     try:
         experiment, eval_df = client.experiments.run(
-            name=version_name, dataset=DATASET, space=SPACE_ID,
+            name=name, dataset=DATASET, space=SPACE_ID,
             task=_agent_task, evaluators=[skill_eval], concurrency=3,
         )
     except RuntimeError as exc:
-        if "already exists" in str(exc) and _retries > 0:
+        if "already exists" not in str(exc):
+            raise
+        if _retries > 0:
             time.sleep(5)
-            return run_agent_experiment(version_name, _retries=_retries - 1)
+            return run_agent_experiment(version_name, _retries=_retries - 1, _suffix=_suffix)
+        if _suffix < 3:
+            print(f"  '{name}' appears permanently blocked server-side; "
+                  f"falling back to '{version_name}-r{_suffix + 1}'")
+            return run_agent_experiment(version_name, _retries=3, _suffix=_suffix + 1)
         raise
     return experiment, eval_df
 
