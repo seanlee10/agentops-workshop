@@ -31,7 +31,7 @@ the output in ways prose instructions alone did not.
 | Eval mechanism | An Arize experiment (`task=run_skill_agent`, `evaluators=[skill_eval]`) logged as `skill-agent-v{i}` so versions are comparable in the Arize UI. |
 | Optimizer | Autonomous `optimize.py` driver that spawns a separate `claude -p` optimizer agent to edit the skill files each round. |
 | Convergence control | Keep-best / reject-regression: snapshot the skill dir per accepted iteration; restore from best on regression. |
-| Scale (default) | Subset of ~15 samsum rows, ~4 iterations. Tunable; this is the main runtime lever (~30–60 min total). |
+| Scale | Full `samsum_small` (100 rows) per experiment, ~4 iterations. ~2–3 h total (real agents). (Was ~15-row `samsum_tiny`; switched to `samsum_small` per user for comparability with Approach 1.) |
 | Permissions | Executor and optimizer run headless with `--dangerously-skip-permissions`, scoped to `approach2/`. |
 | Generator model | Claude (via the CLI/subscription), replacing Approach 1's gpt-4.1. Judge stays `gpt-4o-mini` (OpenAI). |
 
@@ -75,11 +75,10 @@ approach2/
 - Runs as an Arize experiment named `skill-agent-v{i}` with `task=run_skill_agent`,
   reusing the `_delete_experiment_if_exists` idempotency guard and the `run()`-returned
   DataFrame (the list_runs SDK workaround) from Approach 1.
-- Subset handling: because `experiments.run` executes over the whole dataset, Approach 2
-  creates a dedicated small Arize dataset **`samsum_tiny`** (~15 rows, sampled from the
-  same samsum data) and runs all `skill-agent-v{i}` experiments against it. This keeps
-  each eval fast while preserving the Arize UI comparison. Created once (idempotently) in
-  a setup step.
+- Dataset: **`samsum_small`** (100 rows) — reused from Approach 1 so `skill-agent-v{i}`
+  is directly comparable to Approach 1's `skill-v{i}` in the same Arize dataset. (An
+  earlier draft used a dedicated 15-row `samsum_tiny` for speed; changed to `samsum_small`
+  per user for apples-to-apples comparison, accepting the longer runtime.)
 
 ### Optimizer — `optimize.py`
 ```
@@ -146,7 +145,7 @@ skill discovery, stdout parsing), resolve it here before investing in eval + loo
 
 - Executor + optimizer run on the Claude **subscription** (no per-token API cost).
 - Judge runs on OpenAI `gpt-4o-mini` (small cost).
-- Default ~15 rows × (1 + ~4) evals + ~4 optimizer runs ≈ 30–60 min. Subset size and
+- 100 rows × (1 + ~4) evals + ~4 optimizer runs ≈ 2–3 h (real agents, concurrency 3). Row count and
   iteration count are the tunable levers.
 
 ## Out of scope
