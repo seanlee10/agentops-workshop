@@ -4,10 +4,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import evaluate as ev
 
 APPROACH2 = Path(__file__).resolve().parent
+REPO_ROOT = APPROACH2.parent
 SKILL_DIR = APPROACH2 / ".claude/skills/dialog-summary"
 VERSIONS = APPROACH2 / "versions"
 FAILURES = APPROACH2 / "failures.json"
 N_ITER = 4
+# Harness files the optimizer must never edit; reverted after each optimizer run so a
+# stray edit outside the (snapshotted) skill dir cannot corrupt the eval harness.
+HARNESS_FILES = ["approach2/executor.py", "approach2/evaluate.py", "approach2/optimize.py"]
 
 OPT_PROMPT = (
     "You are optimizing the dialog-summary skill so its summaries better match terse "
@@ -30,8 +34,17 @@ def restore(src: Path):
     shutil.copytree(src, SKILL_DIR)
 
 def run_optimizer():
-    subprocess.run(["claude", "-p", OPT_PROMPT, "--dangerously-skip-permissions"],
-                   cwd=str(APPROACH2), timeout=600)
+    # A timeout must not crash the unattended loop: if the optimizer is killed mid-edit,
+    # keep-best still judges whatever it left behind (a broken skill scores low -> reverted).
+    try:
+        subprocess.run(["claude", "-p", OPT_PROMPT, "--dangerously-skip-permissions"],
+                       cwd=str(APPROACH2), timeout=600)
+    except subprocess.TimeoutExpired:
+        print("  optimizer timed out (600s); proceeding — keep-best will judge the partial edit")
+    # Scope guard: the optimizer runs with --dangerously-skip-permissions and could edit
+    # files outside the snapshotted skill dir. restore() only reverts the skill dir, so undo
+    # any edits to the harness files here to keep the eval pipeline intact across iterations.
+    subprocess.run(["git", "checkout", "--"] + HARNESS_FILES, cwd=str(REPO_ROOT))
 
 def main():
     VERSIONS.mkdir(exist_ok=True)

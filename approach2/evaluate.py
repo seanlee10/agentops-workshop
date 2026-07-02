@@ -14,14 +14,17 @@ from phoenix.evals import llm_classify, OpenAIModel
 from executor import run_skill_agent
 
 SPACE_ID = os.getenv("ARIZE_SPACE_ID")
-TINY_N = 15
+DATASET_N = 100
 JUDGE_MODEL = "gpt-4o-mini"
-DATASET = "samsum_tiny"
+# Reuse Approach 1's samsum_small (100 rows) so skill-agent-v* is directly comparable to
+# Approach 1's skill-v* in the same Arize dataset.
+DATASET = "samsum_small"
 
 client = ArizeClient(api_key=os.getenv("ARIZE_API_KEY"), request_verify=False)
 
-def ensure_tiny_dataset(n: int = TINY_N) -> None:
-    """Create the samsum_tiny dataset (n rows) once; skip if it already exists."""
+def ensure_tiny_dataset(n: int = DATASET_N) -> None:
+    """Ensure the eval dataset exists; create it (n rows) only if missing. samsum_small
+    already exists from Approach 1, so this is normally a no-op."""
     existing = client.datasets.list(space=SPACE_ID)
     if any(getattr(d, "name", None) == DATASET for d in getattr(existing, "datasets", existing)):
         return
