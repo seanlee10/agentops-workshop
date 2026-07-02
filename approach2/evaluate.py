@@ -1,4 +1,4 @@
-import os, warnings
+import os, time, warnings
 warnings.filterwarnings("ignore")
 import certifi
 os.environ["SSL_CERT_FILE"] = certifi.where()
@@ -58,19 +58,37 @@ def skill_eval(output, dataset_row) -> EvaluationResult:
 def _agent_task(dataset_row) -> str:
     return run_skill_agent(dataset_row["dialogue"])
 
+def _experiment_exists(version_name: str) -> bool:
+    existing = client.experiments.list(space=SPACE_ID, dataset=DATASET)
+    return any(e.name == version_name for e in existing.experiments)
+
 def _delete_experiment_if_exists(version_name: str):
     existing = client.experiments.list(space=SPACE_ID, dataset=DATASET)
-    for e in existing.experiments:
-        if e.name == version_name:
-            client.experiments.delete(experiment=e.id, space=SPACE_ID, dataset=DATASET)
+    match = next((e for e in existing.experiments if e.name == version_name), None)
+    if match is None:
+        return
+    client.experiments.delete(experiment=match.id, space=SPACE_ID, dataset=DATASET)
+    # Arize's delete is eventually consistent: poll (bounded) until the name no longer
+    # appears before returning, so a subsequent create doesn't race the delete and hit
+    # "experiment already exists" (observed in practice with a fresh delete-then-create).
+    for _ in range(10):
+        if not _experiment_exists(version_name):
+            return
+        time.sleep(2)
 
-def run_agent_experiment(version_name: str):
+def run_agent_experiment(version_name: str, _retries: int = 3):
     _delete_experiment_if_exists(version_name)
     # use run()'s returned df; list_runs().to_df() is broken in arize SDK v8.37.1
-    experiment, eval_df = client.experiments.run(
-        name=version_name, dataset=DATASET, space=SPACE_ID,
-        task=_agent_task, evaluators=[skill_eval], concurrency=3,
-    )
+    try:
+        experiment, eval_df = client.experiments.run(
+            name=version_name, dataset=DATASET, space=SPACE_ID,
+            task=_agent_task, evaluators=[skill_eval], concurrency=3,
+        )
+    except RuntimeError as exc:
+        if "already exists" in str(exc) and _retries > 0:
+            time.sleep(5)
+            return run_agent_experiment(version_name, _retries=_retries - 1)
+        raise
     return experiment, eval_df
 
 def mean_score(eval_df) -> float:
