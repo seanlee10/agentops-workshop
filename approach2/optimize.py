@@ -8,7 +8,7 @@ REPO_ROOT = APPROACH2.parent
 SKILL_DIR = APPROACH2 / ".claude/skills/dialog-summary"
 VERSIONS = APPROACH2 / "versions"
 FAILURES = APPROACH2 / "failures.json"
-N_ITER = 4
+N_ITER = 2
 # Harness files the optimizer must never edit; reverted after each optimizer run so a
 # stray edit outside the (snapshotted) skill dir cannot corrupt the eval harness.
 HARNESS_FILES = ["approach2/executor.py", "approach2/evaluate.py", "approach2/optimize.py"]
