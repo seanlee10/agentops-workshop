@@ -48,7 +48,7 @@ def run_optimizer():
 
 def main():
     VERSIONS.mkdir(exist_ok=True)
-    ev.ensure_tiny_dataset()
+    ev.ensure_eval_dataset()
     _, df = ev.run_agent_experiment("skill-agent-v0")
     best_score = ev.mean_score(df); best_dir = snapshot(0); last_df = df
     history = [("skill-agent-v0", best_score)]

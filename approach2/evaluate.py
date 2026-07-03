@@ -22,7 +22,7 @@ DATASET = "samsum_small"
 
 client = ArizeClient(api_key=os.getenv("ARIZE_API_KEY"), request_verify=False)
 
-def ensure_tiny_dataset(n: int = DATASET_N) -> None:
+def ensure_eval_dataset(n: int = DATASET_N) -> None:
     """Ensure the eval dataset exists; create it (n rows) only if missing. samsum_small
     already exists from Approach 1, so this is normally a no-op."""
     existing = client.datasets.list(space=SPACE_ID)
